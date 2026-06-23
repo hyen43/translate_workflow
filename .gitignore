@@ -1,0 +1,16 @@
+# Secrets
+.env
+
+# Local state — 각자 PC 에서 생성, config.json 으로부터 자동 import
+mappings.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor / tool caches
+.claude/
+.vscode/
+.idea/
+.DS_Store
