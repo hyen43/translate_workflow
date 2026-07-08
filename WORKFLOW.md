@@ -23,7 +23,7 @@
 
 ## 토큰 발급
 
-`.env`(로컬) 또는 Fly secrets(배포)에 아래 값이 필요합니다.
+`.env`(로컬) 또는 Streamlit Cloud Secrets(배포)에 아래 값이 필요합니다.
 
 | 키 | 발급 위치 |
 |---|---|
@@ -122,6 +122,6 @@ Page 1
 
 ## 주의사항
 
-- `.env` 는 git에 올리지 않습니다 (`.gitignore` 처리됨). 배포 환경은 Fly secrets만 사용.
+- `.env` 는 git에 올리지 않습니다 (`.gitignore` 처리됨). 배포 환경은 Streamlit Cloud Secrets만 사용.
 - Confluence **Cloud** 전용 (`*.atlassian.net`). Server/Data Center는 엔드포인트가 다릅니다.
 - 표를 통째로 지우거나 한국어 컬럼 헤더를 바꾸면 표 인식이 실패합니다.
