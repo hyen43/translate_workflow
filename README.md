@@ -50,6 +50,8 @@ streamlit run app.py
    CONFLUENCE_TOKEN = "..."
    ANTHROPIC_API_KEY = "..."
    APP_PASSWORD = "..."
+   # 선택: 팀이 늘 같은 번역시트를 쓰면 URL 입력칸 기본값으로 채워짐
+   DEFAULT_CONFLUENCE_URL = "https://xxx.atlassian.net/wiki/x/..."
    ```
 
    (최상위 시크릿은 환경변수로도 주입되므로 코드 수정 불필요)

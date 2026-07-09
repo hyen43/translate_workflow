@@ -84,7 +84,9 @@ st.caption("Figma의 `Trans*` 프레임 텍스트를 수집해 번역시트에 �
 
 figma_url = st.text_input("Figma URL", placeholder="https://www.figma.com/design/...")
 confluence_url = st.text_input(
-    "Confluence URL", placeholder="https://xxx.atlassian.net/wiki/... (단축 URL 가능)"
+    "Confluence URL",
+    value=os.getenv("DEFAULT_CONFLUENCE_URL", ""),
+    placeholder="https://xxx.atlassian.net/wiki/... (단축 URL 가능)",
 )
 
 if st.button("표 확인", type="primary"):
@@ -145,6 +147,12 @@ if st.button("🔄 동기화 + 번역 실행", type="primary", disabled=not sele
     try:
         with st.spinner("Figma 텍스트 수집 중..."):
             terms = FigmaClient(figma_token).get_terms(table["file_key"])
+
+        if not terms:
+            st.warning(
+                "Figma에서 `Trans*` 프레임을 찾지 못했습니다 — 번역할 프레임 이름이 "
+                "`Trans`로 시작하는지 확인하세요. (기존 표의 빈 셀 번역은 계속 진행합니다)"
+            )
 
         existing_ko = {norm_key(row.get(KO_LANG, "")) for row in info["rows"]}
         new_rows = [(t, l) for t, l in terms if norm_key(t) not in existing_ko]
