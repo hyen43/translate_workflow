@@ -3,6 +3,8 @@ import logging
 
 import anthropic
 
+from glossary import GLOSSARY, RULES
+
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-haiku-4-5"
@@ -20,6 +22,12 @@ _LANG_CODES = {
 _POLICY = """\
 너는 이 프로젝트의 번역 어시스턴트다. 한국어 UI 텍스트를 요청된 언어로 번역한다.
 
+== 우선순위 (위에서부터 강함) ==
+1. 표기 규칙 (RULES 섹션)
+2. 결제 도메인 용어집 (GLOSSARY 섹션) — 원문에 정확히 등장하면 지정 표기 사용
+3. 이 표의 기존 번역 — 동일/유사 용어의 스타일·표기 재사용
+4. 아래 디폴트 번역 정책
+
 == 디폴트 번역 정책 ==
 - 메뉴/카테고리/일반 용어 (예: 회사소개, 채용, 비전) → 일반적 직역
 - 마케팅 카피/슬로건 (긴 문장·단락) → 자연스러운 의역
@@ -28,9 +36,6 @@ _POLICY = """\
 - 주소·전화·이메일·사업자번호 → 번역 스킵 (빈 문자열)
 - 더미/placeholder 텍스트 → 번역 스킵 (빈 문자열)
 - 이미 영어인 항목 (예: Contact Us) → 영어는 원문 유지, 일본어·중국어만 번역
-
-새 용어를 번역할 때 아래 기존 표의 스타일·용어 선택을 최우선으로 참고하고,
-동일하거나 유사한 용어가 표에 있으면 그 번역을 그대로 재사용한다.
 """
 
 
@@ -62,13 +67,24 @@ def suggest_batch(
 def _build_system(existing_rows: list[dict]) -> list[dict]:
     sample = existing_rows[-MAX_EXISTING_ROWS:]
     table_json = json.dumps(sample, ensure_ascii=False, sort_keys=True)
-    return [
-        {
-            "type": "text",
-            "text": f"{_POLICY}\n== 이 표의 기존 번역 ==\n{table_json}",
-            "cache_control": {"type": "ephemeral"},
-        }
-    ]
+    sections = [_POLICY, _format_glossary(), f"== 이 표의 기존 번역 ==\n{table_json}"]
+    text = "\n".join(s for s in sections if s)
+    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+
+
+def _format_glossary() -> str:
+    parts: list[str] = []
+    if RULES:
+        parts.append("== 표기 규칙 (RULES — 최우선) ==")
+        parts.extend(f"- {rule}" for rule in RULES)
+    if GLOSSARY:
+        if parts:
+            parts.append("")
+        parts.append("== 결제 도메인 용어집 (GLOSSARY — 정확 일치 시 지정 표기 사용) ==")
+        for ko, trans in GLOSSARY.items():
+            trans_str = " / ".join(f"{code}={val}" for code, val in trans.items())
+            parts.append(f"- {ko} → {trans_str}")
+    return "\n".join(parts)
 
 
 def _translate_chunk(
