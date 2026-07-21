@@ -13,6 +13,7 @@ MAX_EXISTING_ROWS = 500
 
 # CJK 키("일본어")는 모델이 한자 혼용으로 손상시키는 사례가 있어 ASCII 코드로 주고받는다
 _LANG_CODES = {
+    "한국어": "ko",
     "영어": "en",
     "일본어": "ja",
     "중국어(간체)": "zh-cn",
@@ -20,7 +21,7 @@ _LANG_CODES = {
 }
 
 _POLICY = """\
-너는 이 프로젝트의 번역 어시스턴트다. 한국어 UI 텍스트를 요청된 언어로 번역한다.
+너는 이 프로젝트의 번역 어시스턴트다. 원문 UI 텍스트(대부분 한국어, 간혹 영어)를 요청된 언어로 번역한다.
 
 == 우선순위 (위에서부터 강함) ==
 1. 표기 규칙 (RULES 섹션)
@@ -35,7 +36,7 @@ _POLICY = """\
 - 업계 약어 (예: PG = Payment Gateway) → 원문 보존
 - 주소·전화·이메일·사업자번호 → 번역 스킵 (빈 문자열)
 - 더미/placeholder 텍스트 → 번역 스킵 (빈 문자열)
-- 이미 영어인 항목 (예: Contact Us) → 영어는 원문 유지, 일본어·중국어만 번역
+- 이미 영어인 항목 (예: Contact Us) → 영어는 원문 유지, 한국어·일본어·중국어를 번역
 """
 
 
@@ -44,11 +45,11 @@ def suggest_batch(
     items: list[dict],
     target_langs: list[str],
 ) -> list[dict[str, str]]:
-    """한국어 항목들을 target_langs 로 번역.
+    """원문 항목들을 target_langs 로 번역.
 
     existing_rows: get_table_info()["rows"] — few-shot 재료 (시스템 프롬프트에 캐시)
-    items: [{"페이지 구분": "홈", "한국어": "독서 노트"}, ...]
-    target_langs: 체크된 언어(정규화)만
+    items: [{"페이지 구분": "홈", "원문": "독서 노트"}, ...] — 원문은 한국어 또는 영어
+    target_langs: 체크된 언어(정규화). "한국어" 포함 시 영어 원문 항목만 한국어 번역이 채워짐
     반환: items 와 같은 순서의 [{언어: 번역문}, ...] — 파싱 실패 항목은 빈 문자열.
     """
     if not items or not target_langs:
@@ -95,11 +96,19 @@ def _translate_chunk(
 ) -> list[dict[str, str]]:
     codes = {lang: _LANG_CODES[lang] for lang in target_langs}
     user_prompt = (
-        "다음 한국어 항목들을 아래 언어로 번역해줘.\n"
+        "다음 항목들의 원문을 아래 언어로 번역해줘.\n"
         f"언어: {json.dumps(codes, ensure_ascii=False)}\n"
         f"항목: {json.dumps(chunk, ensure_ascii=False)}\n\n"
         "translations 배열의 길이와 순서는 입력 항목과 동일해야 한다. "
         '번역 스킵 대상은 빈 문자열 "" 로 채운다.'
+        + (
+            "\nko 규칙: 원문이 영어 등 한국어가 아닌 항목은 ko에 반드시 자연스러운 "
+            '한국어 번역을 넣는다 (예: 원문 "Refund Policy" → ko "환불 정책"). '
+            '원문이 이미 한국어인 항목만 ko를 "" 로 둔다. '
+            "이 경우 영어 원문은 번역 스킵 대상이 아니다."
+            if "ko" in codes.values()
+            else ""
+        )
     )
     schema = {
         "type": "object",

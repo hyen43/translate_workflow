@@ -25,6 +25,14 @@ def parse_figma_url(url: str) -> str | None:
     return m.group(1) if m else None
 
 
+_HANGUL_RE = re.compile(r"[가-힣]")
+
+
+def is_english_source(text: str) -> bool:
+    """한글이 전혀 없고 영문자가 있으면 영어 원문으로 간주 (한국어 번역 대상)."""
+    return bool(re.search(r"[A-Za-z]", text)) and not _HANGUL_RE.search(text)
+
+
 def parse_confluence_url(url: str, email: str, token: str) -> tuple[str | None, str | None]:
     """정식 URL → (domain, page_id). 단축 URL(/wiki/x/..)이면 redirect 따라가서 추출."""
     domain_m = CONFLUENCE_DOMAIN_RE.search(url)
@@ -134,8 +142,14 @@ st.markdown(
 
 st.markdown("**번역할 언어** (체크된 언어만 채움, 미체크는 공백 유지)")
 selected_langs = []
-cols = st.columns(len(SUPPORTED_LANGS))
-for col, lang in zip(cols, SUPPORTED_LANGS):
+ko_col, *lang_cols = st.columns(1 + len(SUPPORTED_LANGS))
+translate_ko = ko_col.checkbox(
+    KO_LANG,
+    value=True,
+    key="lang_ko",
+    help="원문이 영어인 신규 항목의 한국어 셀을 번역으로 채웁니다. 해제 시 한국어 셀에 영어 원문이 그대로 들어갑니다.",
+)
+for col, lang in zip(lang_cols, SUPPORTED_LANGS):
     exists = lang in info["langs"]
     label = lang if exists else f"{lang} (컬럼 추가)"
     if col.checkbox(label, value=exists, key=f"lang_{lang}"):
@@ -143,7 +157,11 @@ for col, lang in zip(cols, SUPPORTED_LANGS):
 
 # ---------- ③ 동기화 + 번역 실행 ----------
 
-if st.button("🔄 동기화 + 번역 실행", type="primary", disabled=not selected_langs):
+if st.button(
+    "🔄 동기화 + 번역 실행",
+    type="primary",
+    disabled=not (selected_langs or translate_ko),
+):
     try:
         with st.spinner("Figma 텍스트 수집 중..."):
             terms = FigmaClient(figma_token).get_terms(table["file_key"])
@@ -154,22 +172,35 @@ if st.button("🔄 동기화 + 번역 실행", type="primary", disabled=not sele
                 "`Trans`로 시작하는지 확인하세요. (기존 표의 빈 셀 번역은 계속 진행합니다)"
             )
 
-        existing_ko = {norm_key(row.get(KO_LANG, "")) for row in info["rows"]}
-        new_rows = [(t, l) for t, l in terms if norm_key(t) not in existing_ko]
+        # 원문이 영어인 행은 영어 셀에 저장되므로 전체 언어 컬럼 기준으로 중복 판정
+        existing_keys = {
+            norm_key(row.get(col, ""))
+            for row in info["rows"]
+            for col in (KO_LANG, *info["langs"])
+        }
+        existing_keys.discard("")
+        new_rows = [(t, l) for t, l in terms if norm_key(t) not in existing_keys]
 
-        items = [{"페이지 구분": label, KO_LANG: ko} for ko, label in new_rows]
+        items = [{"페이지 구분": label, "원문": src} for src, label in new_rows]
         for row in info["rows"]:
             ko = row.get(KO_LANG, "").strip()
             if ko and any(not row.get(lang, "").strip() for lang in selected_langs):
-                items.append({"페이지 구분": row.get("페이지 구분", ""), KO_LANG: ko})
+                items.append({"페이지 구분": row.get("페이지 구분", ""), "원문": ko})
 
         translations = {}
-        if items:
-            with st.spinner(f"Claude 번역 중... ({len(items)}건 × {len(selected_langs)}개 언어)"):
-                results = translator.suggest_batch(info["rows"], items, selected_langs)
+        english_sources = {src for src, _ in new_rows if is_english_source(src)}
+        request_langs = selected_langs + (
+            [KO_LANG] if translate_ko and english_sources else []
+        )
+        if items and request_langs:
+            with st.spinner(f"Claude 번역 중... ({len(items)}건 × {len(request_langs)}개 언어)"):
+                results = translator.suggest_batch(info["rows"], items, request_langs)
             translations = {
-                norm_key(item[KO_LANG]): res for item, res in zip(items, results)
+                norm_key(item["원문"]): res for item, res in zip(items, results)
             }
+            # 영어 원문은 영어 셀에 원문 그대로 보존 (영어 미체크 시에도)
+            for src in english_sources:
+                translations.setdefault(norm_key(src), {})["영어"] = src
 
         with st.spinner("Confluence 표 업데이트 중..."):
             cc = ConfluenceClient(table["domain"], email, conf_token)

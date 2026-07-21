@@ -94,8 +94,11 @@ class ConfluenceClient:
         """단일 GET→PUT 으로 컬럼 추가 + 신규 행 append + 기존 빈 셀 채움.
 
         selected_langs: 체크된 언어(정규화). 표에 없으면 컬럼을 추가한다.
-        new_rows: [(한국어, 페이지 구분 라벨), ...]
-        translations: {norm_key(한국어): {언어: 번역문}}
+        new_rows: [(원문, 페이지 구분 라벨), ...] — 원문은 한국어 또는 영어
+        translations: {norm_key(원문): {언어: 번역문}}
+            "한국어" 키가 있으면(=영어 원문) 한국어 셀에 그 번역을 쓰고,
+            "영어" 키의 원문이 영어 셀에 기록된다 (신규 행은 체크 여부와 무관하게
+            translations 에 있는 언어를 모두 기록).
         PUT 409 시 재조회 후 2회 재시도 (500ms 백오프).
         반환: {"added_rows": n, "filled_cells": m, "added_columns": [...]}
         """
@@ -172,16 +175,19 @@ class ConfluenceClient:
         label_index = next(
             (i for i, h in enumerate(headers) if h.strip() == LABEL_HEADER), None
         )
-        for ko, label in new_rows:
-            t = translations.get(norm_key(ko), {})
+        for src, label in new_rows:
+            t = translations.get(norm_key(src), {})
             tr = soup.new_tag("tr")
             for i in range(len(headers)):
                 td = soup.new_tag("td")
                 if i == ko_index:
-                    td.string = ko
+                    value = t.get(KO_LANG, "")
+                    td.string = value or src
+                    if value:
+                        filled += 1
                 elif label_index is not None and i == label_index:
                     td.string = label or ""
-                elif col_langs[i] and col_langs[i] in selected_langs:
+                elif col_langs[i]:
                     value = t.get(col_langs[i], "")
                     td.string = value
                     if value:
